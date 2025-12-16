@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Email Sender</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23667eea'/><path d='M20 30h60v40H20z' fill='white'/><path d='M20 30l30 25 30-25' fill='none' stroke='%23667eea' stroke-width='4'/></svg>">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/@zxing/library@latest"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>📧 Auto Email Sender</h1>
+        
+        <form id="emailForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="fromField">From (Name : Email):</label>
+                <input type="text" id="fromField" name="fromField" placeholder="Adarsh Gupta : adarshgupta0129@gmail.com" value="Adarsh Gupta : adarshgupta0129@gmail.com" required>
+                <small class="field-hint">Format: Your Name : your@email.com</small>
+            </div>
+
+            <div class="form-group">
+                <label for="to">To Email:</label>
+                <div class="input-with-button">
+                    <input type="email" id="to" name="to" placeholder="abc@gmail.com" required>
+                    <button type="button" id="scanBtn" class="scan-btn">📷 Scan</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="subject">Subject:</label>
+                <div class="template-row">
+                    <select id="subjectSelect" class="template-select">
+                        <option value="">-- Select from template or type below --</option>
+                    </select>
+                    <button type="button" id="deleteSubjectBtn" class="delete-template-btn" title="Delete selected subject">✕</button>
+                </div>
+                <div class="input-with-add">
+                    <input type="text" id="subject" name="subject" placeholder="Enter email subject" required>
+                    <button type="button" id="addSubjectBtn" class="add-template-btn" title="Save as template">+</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="message">Message:</label>
+                <div class="template-row">
+                    <select id="messageSelect" class="template-select">
+                        <option value="">-- Select from template or type below --</option>
+                    </select>
+                    <button type="button" id="deleteMessageBtn" class="delete-template-btn" title="Delete selected message">✕</button>
+                </div>
+                <div class="input-with-add">
+                    <textarea id="message" name="message" rows="5" placeholder="Enter your message here..." required></textarea>
+                    <button type="button" id="addMessageBtn" class="add-template-btn" title="Save as template">+</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Attach Files:</label>
+                <input type="file" id="attachments" name="attachments" multiple>
+                <small class="file-hint">Upload any file type (max 10MB each, multiple files allowed)</small>
+                
+                <label class="sub-label">Or select from saved files:</label>
+                <div class="files-list" id="filesList">
+                    <!-- Files will be loaded here -->
+                </div>
+            </div>
+
+            <button type="submit" class="send-btn">📤 Send Email</button>
+        </form>
+
+        <div id="status" class="status"></div>
+
+        <!-- Camera Scanner Modal -->
+        <div id="scannerModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>📷 Scan Email QR Code / Barcode</h2>
+                    <button id="closeScanner" class="close-btn">&times;</button>
+                </div>
+                <div class="scanner-container">
+                    <video id="video" playsinline></video>
+                    <div class="scanner-overlay"></div>
+                </div>
+                <div class="scanner-controls">
+                    <button id="captureBtn" class="capture-btn">📸 Capture & Read</button>
+                    <p class="scanner-hint">Point camera at QR code or text containing email address</p>
+                </div>
+                <div id="scanResult" class="scan-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const emailForm = document.getElementById('emailForm');
+        const scanBtn = document.getElementById('scanBtn');
+        const scannerModal = document.getElementById('scannerModal');
+        const closeScanner = document.getElementById('closeScanner');
+        const video = document.getElementById('video');
+        const captureBtn = document.getElementById('captureBtn');
+        const toInput = document.getElementById('to');
+        const statusDiv = document.getElementById('status');
+        const filesList = document.getElementById('filesList');
+        const subjectSelect = document.getElementById('subjectSelect');
+        const subjectInput = document.getElementById('subject');
+        const messageSelect = document.getElementById('messageSelect');
+        const messageInput = document.getElementById('message');
+        const addSubjectBtn = document.getElementById('addSubjectBtn');
+        const deleteSubjectBtn = document.getElementById('deleteSubjectBtn');
+        const addMessageBtn = document.getElementById('addMessageBtn');
+        const deleteMessageBtn = document.getElementById('deleteMessageBtn');
+
+        let stream = null;
+        let codeReader = null;
+
+        // Load saved files
+        async function loadFiles() {
+            try {
+                const response = await fetch('/files');
+                const data = await response.json();
+                
+                if (data.files.length === 0) {
+                    filesList.innerHTML = '<p class="no-files">No saved files</p>';
+                    return;
+                }
+                
+                filesList.innerHTML = data.files.map(file => `
+                    <div class="file-item">
+                        <label class="file-checkbox">
+                            <input type="checkbox" name="selectedFiles" value="${file}">
+                            <span class="file-name">📎 ${file}</span>
+                        </label>
+                        <button type="button" class="delete-file-btn" data-file="${file}" title="Delete file">✕</button>
+                    </div>
+                `).join('');
+                
+                // Add delete event listeners
+                document.querySelectorAll('.delete-file-btn').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        const fileName = e.target.dataset.file;
+                        if (confirm(`Delete file: "${fileName}"?`)) {
+                            await deleteFile(fileName);
+                        }
+                    });
+                });
+            } catch (error) {
+                console.error('Error loading files:', error);
+            }
+        }
+
+        // Delete file
+        async function deleteFile(fileName) {
+            try {
+                const response = await fetch('/files/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileName })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showStatus('File deleted!', 'success');
+                    loadFiles();
+                } else {
+                    showStatus('Error deleting file', 'error');
+                }
+            } catch (error) {
+                showStatus('Error deleting file', 'error');
+            }
+        }
+
+        // Load predefined subjects
+        async function loadSubjects() {
+            try {
+                const response = await fetch('/templates/subjects');
+                const data = await response.json();
+                subjectSelect.innerHTML = '<option value="">-- Select from template or type below --</option>';
+                data.subjects.forEach(subject => {
+                    const option = document.createElement('option');
+                    option.value = subject;
+                    option.textContent = subject;
+                    subjectSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading subjects:', error);
+            }
+        }
+
+        // Load predefined messages
+        async function loadMessages() {
+            try {
+                const response = await fetch('/templates/messages');
+                const data = await response.json();
+                messageSelect.innerHTML = '<option value="">-- Select from template or type below --</option>';
+                data.messages.forEach((message, index) => {
+                    const option = document.createElement('option');
+                    option.value = message;
+                    option.textContent = `Template ${index + 1}: ${message.substring(0, 50)}...`;
+                    messageSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading messages:', error);
+            }
+        }
+
+        // Handle subject selection
+        subjectSelect.addEventListener('change', () => {
+            if (subjectSelect.value) {
+                subjectInput.value = subjectSelect.value;
+            }
+        });
+
+        // Handle message selection
+        messageSelect.addEventListener('change', () => {
+            if (messageSelect.value) {
+                messageInput.value = messageSelect.value;
+            }
+        });
+
+        // Delete subject from template
+        deleteSubjectBtn.addEventListener('click', async () => {
+            const selectedSubject = subjectSelect.value;
+            if (!selectedSubject) {
+                showStatus('Please select a subject to delete', 'error');
+                return;
+            }
+            
+            if (confirm(`Delete subject: "${selectedSubject}"?`)) {
+                try {
+                    const response = await fetch('/templates/subjects/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ subject: selectedSubject })
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showStatus('Subject deleted!', 'success');
+                        loadSubjects();
+                        subjectInput.value = '';
+                    }
+                } catch (error) {
+                    showStatus('Error deleting subject', 'error');
+                }
+            }
+        });
+
+        // Delete message from template
+        deleteMessageBtn.addEventListener('click', async () => {
+            const selectedMessage = messageSelect.value;
+            if (!selectedMessage) {
+                showStatus('Please select a message to delete', 'error');
+                return;
+            }
+            
+            if (confirm('Delete this message template?')) {
+                try {
+                    const response = await fetch('/templates/messages/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: selectedMessage })
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showStatus('Message deleted!', 'success');
+                        loadMessages();
+                        messageInput.value = '';
+                    }
+                } catch (error) {
+                    showStatus('Error deleting message', 'error');
+                }
+            }
+        });
+
+        // Add new subject to template
+        async function addSubjectToTemplate(subject) {
+            if (!subject.trim()) return;
+            try {
+                await fetch('/templates/subjects/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subject: subject.trim() })
+                });
+                loadSubjects();
+            } catch (error) {
+                console.error('Error adding subject:', error);
+            }
+        }
+
+        // Add new message to template
+        async function addMessageToTemplate(message) {
+            if (!message.trim()) return;
+            try {
+                await fetch('/templates/messages/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message.trim() })
+                });
+                loadMessages();
+            } catch (error) {
+                console.error('Error adding message:', error);
+            }
+        }
+
+        // Add subject button click
+        addSubjectBtn.addEventListener('click', async () => {
+            const subject = subjectInput.value.trim();
+            if (!subject) {
+                showStatus('Please enter a subject first', 'error');
+                return;
+            }
+            await addSubjectToTemplate(subject);
+            showStatus('Subject saved as template!', 'success');
+        });
+
+        // Add message button click
+        addMessageBtn.addEventListener('click', async () => {
+            const message = messageInput.value.trim();
+            if (!message) {
+                showStatus('Please enter a message first', 'error');
+                return;
+            }
+            await addMessageToTemplate(message);
+            showStatus('Message saved as template!', 'success');
+        });
+
+        // Initialize on page load
+        loadFiles();
+        loadSubjects();
+        loadMessages();
+
+        // Open scanner modal
+        scanBtn.addEventListener('click', async () => {
+            scannerModal.style.display = 'flex';
+            await startCamera();
+        });
+
+        // Close scanner modal
+        closeScanner.addEventListener('click', () => {
+            stopCamera();
+            scannerModal.style.display = 'none';
+        });
+
+        // Close modal when clicking outside
+        scannerModal.addEventListener('click', (e) => {
+            if (e.target === scannerModal) {
+                stopCamera();
+                scannerModal.style.display = 'none';
+            }
+        });
+
+        // Start camera
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+                video.srcObject = stream;
+                await video.play();
+
+                // Initialize ZXing barcode reader
+                codeReader = new ZXing.BrowserMultiFormatReader();
+                
+                // Continuously decode from video
+                codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
+                    if (result) {
+                        const text = result.getText();
+                        const email = extractEmail(text);
+                        if (email) {
+                            scanResult.innerHTML = `<span class="success">✅ Found: ${email}</span>`;
+                            toInput.value = email;
+                            setTimeout(() => {
+                                stopCamera();
+                                scannerModal.style.display = 'none';
+                                showStatus('Email scanned successfully!', 'success');
+                            }, 1000);
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                scanResult.innerHTML = `<span class="error">❌ Camera error: ${error.message}</span>`;
+            }
+        }
+
+        // Stop camera
+        function stopCamera() {
+            if (codeReader) {
+                codeReader.reset();
+                codeReader = null;
+            }
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+            scanResult.innerHTML = '';
+        }
+
+        // Extract email from text
+        function extractEmail(text) {
+            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+            const matches = text.match(emailRegex);
+            return matches ? matches[0] : null;
+        }
+
+        // Capture and process image manually
+        captureBtn.addEventListener('click', () => {
+            if (!video.srcObject) return;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+
+            // Try to decode QR/barcode from captured frame
+            if (codeReader) {
+                scanResult.innerHTML = '<span class="info">🔍 Scanning...</span>';
+            }
+        });
+
+        // Form submission
+        emailForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData();
+            
+            // Parse the from field (Name : Email)
+            const fromField = document.getElementById('fromField').value;
+            const fromParts = fromField.split(':').map(s => s.trim());
+            const senderName = fromParts[0] || '';
+            const fromEmail = fromParts[1] || fromParts[0];
+            
+            formData.append('senderName', senderName);
+            formData.append('from', fromEmail);
+            formData.append('to', document.getElementById('to').value);
+            formData.append('subject', document.getElementById('subject').value);
+            formData.append('message', document.getElementById('message').value);
+
+            // Add uploaded files
+            const attachmentFiles = document.getElementById('attachments').files;
+            for (let i = 0; i < attachmentFiles.length; i++) {
+                formData.append('attachments', attachmentFiles[i]);
+            }
+
+            // Add selected files from saved files
+            const selectedFiles = document.querySelectorAll('input[name="selectedFiles"]:checked');
+            selectedFiles.forEach(checkbox => {
+                formData.append('selectedFiles', checkbox.value);
+            });
+
+            showStatus('Sending email...', 'info');
+
+            try {
+                const response = await fetch('/send-email', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus(result.message, 'success');
+                    emailForm.reset();
+                    // Restore default from field value
+                    document.getElementById('fromField').value = 'Adarsh Gupta : adarshgupta0129@gmail.com';
+                    loadFiles(); // Reload files list to show newly uploaded files
+                } else {
+                    showStatus(result.message, 'error');
+                }
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            }
+        });
+
+        // Show status message
+        function showStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = 'status ' + type;
+            statusDiv.style.display = 'block';
+
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>

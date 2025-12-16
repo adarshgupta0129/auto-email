@@ -1,0 +1,8 @@
+Monthly Report - {{month}}
+Meeting Request
+Project Update
+Follow-up on Our Conversation
+Document Attached for Your Review
+Payment Confirmation
+Welcome to Our Service
+Important Notice
