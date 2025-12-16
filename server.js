@@ -30,12 +30,20 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
+
+// Trust proxy for production (needed for secure cookies behind reverse proxy)
+if (process.env.ENV === 'production') {
+    app.set('trust proxy', 1);
+}
+
 app.use(session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: { 
-        secure: process.env.ENV === 'production',
+        secure: process.env.ENV === 'production', // true only in production with HTTPS
+        httpOnly: true,
+        sameSite: process.env.ENV === 'production' ? 'none' : 'lax',
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
