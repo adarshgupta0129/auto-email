@@ -3,13 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto Email Sender</title>
+    <title>Send Email - Auto Email Sender</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23667eea'/><path d='M20 30h60v40H20z' fill='white'/><path d='M20 30l30 25 30-25' fill='none' stroke='%23667eea' stroke-width='4'/></svg>">
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/@zxing/library@latest"></script>
 </head>
 <body>
-    <div class="container">
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-logo">📧 Auto Email</a>
+            <div class="nav-links">
+                <a href="/home.html" class="nav-link">Home</a>
+                <a href="/" class="nav-link active">Send Email</a>
+                <a href="/privacy.html" class="nav-link">Privacy</a>
+                <a href="/terms.html" class="nav-link">Terms</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container app-container">
         <h1>📧 Auto Email Sender</h1>
         
         <!-- Login Section -->
@@ -113,6 +126,16 @@
             </div>
         </div>
     </div>
+
+    <!-- Footer -->
+    <footer class="footer app-footer">
+        <div class="footer-links">
+            <a href="/home.html">Home</a>
+            <a href="/privacy.html">Privacy Policy</a>
+            <a href="/terms.html">Terms of Service</a>
+        </div>
+        <p>&copy; 2024 Auto Email Sender</p>
+    </footer>
 
     <script>
         // DOM Elements
