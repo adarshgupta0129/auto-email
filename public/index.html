@@ -12,17 +12,40 @@
     <div class="container">
         <h1>📧 Auto Email Sender</h1>
         
-        <form id="emailForm" enctype="multipart/form-data">
-            <div class="form-group">
-                <label for="fromField">From (Name : Email):</label>
-                <input type="text" id="fromField" name="fromField" placeholder="Adarsh Gupta : adarshgupta0129@gmail.com" value="Adarsh Gupta : adarshgupta0129@gmail.com" required>
-                <small class="field-hint">Format: Your Name : your@email.com</small>
-            </div>
+        <!-- Login Section -->
+        <div id="loginSection" class="login-section">
+            <p>Sign in with your Google account to send emails</p>
+            <a href="/auth/google" class="google-btn">
+                <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
+                    <g transform="matrix(1, 0, 0, 1, 0, 0)">
+                        <path fill="#EA4335" d="M12 5c1.617 0 3.082.573 4.235 1.5L19.5 3.25C17.457 1.25 14.862 0 12 0 7.392 0 3.397 2.6 1.386 6.41l3.913 3.04C6.227 6.85 8.87 5 12 5z"/>
+                        <path fill="#4285F4" d="M23.896 12.265c0-.816-.066-1.636-.2-2.438H12v4.62h6.69c-.275 1.522-1.13 2.822-2.428 3.69l3.862 3c2.26-2.084 3.772-5.148 3.772-8.872z"/>
+                        <path fill="#FBBC05" d="M5.3 14.55c-.266-.79-.42-1.64-.42-2.55s.154-1.76.42-2.55L1.386 6.41C.504 8.16 0 10.022 0 12s.504 3.84 1.386 5.59L5.3 14.55z"/>
+                        <path fill="#34A853" d="M12 24c3.24 0 5.966-1.075 7.954-2.913l-3.862-3c-1.08.72-2.462 1.14-4.092 1.14-3.13 0-5.773-1.85-6.7-4.45L1.386 17.59C3.397 21.4 7.392 24 12 24z"/>
+                    </g>
+                </svg>
+                Sign in with Google
+            </a>
+        </div>
 
+        <!-- User Info Section -->
+        <div id="userSection" class="user-section" style="display: none;">
+            <div class="user-info">
+                <img id="userPicture" src="" alt="Profile" class="user-avatar">
+                <div class="user-details">
+                    <span id="userName" class="user-name"></span>
+                    <span id="userEmail" class="user-email"></span>
+                </div>
+                <a href="/auth/logout" class="logout-btn">Logout</a>
+            </div>
+        </div>
+
+        <!-- Email Form -->
+        <form id="emailForm" enctype="multipart/form-data" style="display: none;">
             <div class="form-group">
                 <label for="to">To Email:</label>
                 <div class="input-with-button">
-                    <input type="email" id="to" name="to" placeholder="abc@gmail.com" required>
+                    <input type="email" id="to" name="to" placeholder="recipient@gmail.com" required>
                     <button type="button" id="scanBtn" class="scan-btn">📷 Scan</button>
                 </div>
             </div>
@@ -94,6 +117,8 @@
     <script>
         // DOM Elements
         const emailForm = document.getElementById('emailForm');
+        const loginSection = document.getElementById('loginSection');
+        const userSection = document.getElementById('userSection');
         const scanBtn = document.getElementById('scanBtn');
         const scannerModal = document.getElementById('scannerModal');
         const closeScanner = document.getElementById('closeScanner');
@@ -113,6 +138,48 @@
 
         let stream = null;
         let codeReader = null;
+
+        // Check login status on page load
+        async function checkLoginStatus() {
+            try {
+                const response = await fetch('/auth/user');
+                const data = await response.json();
+                
+                if (data.loggedIn) {
+                    loginSection.style.display = 'none';
+                    userSection.style.display = 'block';
+                    emailForm.style.display = 'block';
+                    
+                    document.getElementById('userName').textContent = data.user.name;
+                    document.getElementById('userEmail').textContent = data.user.email;
+                    document.getElementById('userPicture').src = data.user.picture || '';
+                    
+                    // Load templates and files
+                    loadFiles();
+                    loadSubjects();
+                    loadMessages();
+                } else {
+                    loginSection.style.display = 'block';
+                    userSection.style.display = 'none';
+                    emailForm.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error checking login status:', error);
+            }
+        }
+
+        // Check for login result in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('login') === 'success') {
+            showStatus('Logged in successfully!', 'success');
+            window.history.replaceState({}, document.title, '/');
+        } else if (urlParams.get('login') === 'error') {
+            showStatus('Login failed. Please try again.', 'error');
+            window.history.replaceState({}, document.title, '/');
+        }
+
+        // Initialize
+        checkLoginStatus();
 
         // Load saved files
         async function loadFiles() {
@@ -135,7 +202,6 @@
                     </div>
                 `).join('');
                 
-                // Add delete event listeners
                 document.querySelectorAll('.delete-file-btn').forEach(btn => {
                     btn.addEventListener('click', async (e) => {
                         const fileName = e.target.dataset.file;
@@ -149,7 +215,6 @@
             }
         }
 
-        // Delete file
         async function deleteFile(fileName) {
             try {
                 const response = await fetch('/files/delete', {
@@ -169,7 +234,6 @@
             }
         }
 
-        // Load predefined subjects
         async function loadSubjects() {
             try {
                 const response = await fetch('/templates/subjects');
@@ -186,7 +250,6 @@
             }
         }
 
-        // Load predefined messages
         async function loadMessages() {
             try {
                 const response = await fetch('/templates/messages');
@@ -203,21 +266,18 @@
             }
         }
 
-        // Handle subject selection
         subjectSelect.addEventListener('change', () => {
             if (subjectSelect.value) {
                 subjectInput.value = subjectSelect.value;
             }
         });
 
-        // Handle message selection
         messageSelect.addEventListener('change', () => {
             if (messageSelect.value) {
                 messageInput.value = messageSelect.value;
             }
         });
 
-        // Delete subject from template
         deleteSubjectBtn.addEventListener('click', async () => {
             const selectedSubject = subjectSelect.value;
             if (!selectedSubject) {
@@ -244,7 +304,6 @@
             }
         });
 
-        // Delete message from template
         deleteMessageBtn.addEventListener('click', async () => {
             const selectedMessage = messageSelect.value;
             if (!selectedMessage) {
@@ -271,76 +330,55 @@
             }
         });
 
-        // Add new subject to template
-        async function addSubjectToTemplate(subject) {
-            if (!subject.trim()) return;
-            try {
-                await fetch('/templates/subjects/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subject: subject.trim() })
-                });
-                loadSubjects();
-            } catch (error) {
-                console.error('Error adding subject:', error);
-            }
-        }
-
-        // Add new message to template
-        async function addMessageToTemplate(message) {
-            if (!message.trim()) return;
-            try {
-                await fetch('/templates/messages/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message.trim() })
-                });
-                loadMessages();
-            } catch (error) {
-                console.error('Error adding message:', error);
-            }
-        }
-
-        // Add subject button click
         addSubjectBtn.addEventListener('click', async () => {
             const subject = subjectInput.value.trim();
             if (!subject) {
                 showStatus('Please enter a subject first', 'error');
                 return;
             }
-            await addSubjectToTemplate(subject);
-            showStatus('Subject saved as template!', 'success');
+            try {
+                await fetch('/templates/subjects/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subject })
+                });
+                showStatus('Subject saved as template!', 'success');
+                loadSubjects();
+            } catch (error) {
+                showStatus('Error saving subject', 'error');
+            }
         });
 
-        // Add message button click
         addMessageBtn.addEventListener('click', async () => {
             const message = messageInput.value.trim();
             if (!message) {
                 showStatus('Please enter a message first', 'error');
                 return;
             }
-            await addMessageToTemplate(message);
-            showStatus('Message saved as template!', 'success');
+            try {
+                await fetch('/templates/messages/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                showStatus('Message saved as template!', 'success');
+                loadMessages();
+            } catch (error) {
+                showStatus('Error saving message', 'error');
+            }
         });
 
-        // Initialize on page load
-        loadFiles();
-        loadSubjects();
-        loadMessages();
-
-        // Open scanner modal
+        // Scanner functionality
         scanBtn.addEventListener('click', async () => {
             scannerModal.style.display = 'flex';
             await startCamera();
         });
 
-        // Close scanner modal
         closeScanner.addEventListener('click', () => {
             stopCamera();
             scannerModal.style.display = 'none';
         });
 
-        // Close modal when clicking outside
         scannerModal.addEventListener('click', (e) => {
             if (e.target === scannerModal) {
                 stopCamera();
@@ -348,7 +386,6 @@
             }
         });
 
-        // Start camera
         async function startCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -357,10 +394,8 @@
                 video.srcObject = stream;
                 await video.play();
 
-                // Initialize ZXing barcode reader
                 codeReader = new ZXing.BrowserMultiFormatReader();
                 
-                // Continuously decode from video
                 codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
                     if (result) {
                         const text = result.getText();
@@ -383,7 +418,6 @@
             }
         }
 
-        // Stop camera
         function stopCamera() {
             if (codeReader) {
                 codeReader.reset();
@@ -397,24 +431,19 @@
             scanResult.innerHTML = '';
         }
 
-        // Extract email from text
         function extractEmail(text) {
             const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
             const matches = text.match(emailRegex);
             return matches ? matches[0] : null;
         }
 
-        // Capture and process image manually
         captureBtn.addEventListener('click', () => {
             if (!video.srcObject) return;
-
             const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0);
-
-            // Try to decode QR/barcode from captured frame
             if (codeReader) {
                 scanResult.innerHTML = '<span class="info">🔍 Scanning...</span>';
             }
@@ -425,26 +454,15 @@
             e.preventDefault();
 
             const formData = new FormData();
-            
-            // Parse the from field (Name : Email)
-            const fromField = document.getElementById('fromField').value;
-            const fromParts = fromField.split(':').map(s => s.trim());
-            const senderName = fromParts[0] || '';
-            const fromEmail = fromParts[1] || fromParts[0];
-            
-            formData.append('senderName', senderName);
-            formData.append('from', fromEmail);
             formData.append('to', document.getElementById('to').value);
             formData.append('subject', document.getElementById('subject').value);
             formData.append('message', document.getElementById('message').value);
 
-            // Add uploaded files
             const attachmentFiles = document.getElementById('attachments').files;
             for (let i = 0; i < attachmentFiles.length; i++) {
                 formData.append('attachments', attachmentFiles[i]);
             }
 
-            // Add selected files from saved files
             const selectedFiles = document.querySelectorAll('input[name="selectedFiles"]:checked');
             selectedFiles.forEach(checkbox => {
                 formData.append('selectedFiles', checkbox.value);
@@ -463,9 +481,7 @@
                 if (result.success) {
                     showStatus(result.message, 'success');
                     emailForm.reset();
-                    // Restore default from field value
-                    document.getElementById('fromField').value = 'Adarsh Gupta : adarshgupta0129@gmail.com';
-                    loadFiles(); // Reload files list to show newly uploaded files
+                    loadFiles();
                 } else {
                     showStatus(result.message, 'error');
                 }
@@ -474,7 +490,6 @@
             }
         });
 
-        // Show status message
         function showStatus(message, type) {
             statusDiv.textContent = message;
             statusDiv.className = 'status ' + type;

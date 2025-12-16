@@ -4,16 +4,41 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const cors = require('cors');
+const session = require('express-session');
+const { google } = require('googleapis');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+
+// Google OAuth2 configuration
+const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.LOCAL_GOOGLE_REDIRECT_URI
+);
+
+// Scopes for Gmail access
+const SCOPES = [
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile'
+];
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
+app.use(session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+        secure: process.env.ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+}));
 
 // Multer configuration for file uploads
 const storage = multer.diskStorage({
@@ -37,74 +62,177 @@ const upload = multer({
     }
 });
 
-// Create email transporter
-const createTransporter = () => {
-    return nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-            user: process.env.EMAIL_USER || 'ada@gmail.com',
-            pass: process.env.EMAIL_PASS || 'your-app-password'
-        }
+// Auth Routes
+app.get('/auth/google', (req, res) => {
+    const authUrl = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        scope: SCOPES,
+        prompt: 'consent'
     });
+    res.redirect(authUrl);
+});
+
+app.get('/auth/google/callback', async (req, res) => {
+    const { code } = req.query;
+    
+    try {
+        const { tokens } = await oauth2Client.getToken(code);
+        oauth2Client.setCredentials(tokens);
+        
+        // Get user info
+        const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+        const userInfo = await oauth2.userinfo.get();
+        
+        // Store in session
+        req.session.tokens = tokens;
+        req.session.user = {
+            email: userInfo.data.email,
+            name: userInfo.data.name,
+            picture: userInfo.data.picture
+        };
+        
+        res.redirect('/?login=success');
+    } catch (error) {
+        console.error('Auth error:', error);
+        res.redirect('/?login=error');
+    }
+});
+
+app.get('/auth/logout', (req, res) => {
+    req.session.destroy();
+    res.redirect('/');
+});
+
+app.get('/auth/user', (req, res) => {
+    if (req.session.user) {
+        res.json({ 
+            loggedIn: true, 
+            user: req.session.user 
+        });
+    } else {
+        res.json({ loggedIn: false });
+    }
+});
+
+// Middleware to check authentication
+const requireAuth = (req, res, next) => {
+    if (!req.session.tokens) {
+        return res.status(401).json({ 
+            success: false, 
+            message: 'Please login with Google first' 
+        });
+    }
+    next();
 };
 
-// Route to send email
-app.post('/send-email', upload.array('attachments', 10), async (req, res) => {
+// Route to send email using Gmail API
+app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req, res) => {
     try {
-        const { from, to, subject, message, senderName, selectedFiles } = req.body;
+        const { to, subject, message, selectedFiles } = req.body;
         
-        if (!from || !to || !subject || !message) {
+        if (!to || !subject || !message) {
             return res.status(400).json({ 
                 success: false, 
-                message: 'All fields are required' 
+                message: 'To, Subject and Message are required' 
             });
         }
 
-        const transporter = createTransporter();
+        // Set credentials from session
+        oauth2Client.setCredentials(req.session.tokens);
+        
+        // Refresh token if needed
+        if (req.session.tokens.expiry_date && req.session.tokens.expiry_date < Date.now()) {
+            const { credentials } = await oauth2Client.refreshAccessToken();
+            req.session.tokens = credentials;
+            oauth2Client.setCredentials(credentials);
+        }
 
-        // Format the from field with name if provided
-        const fromAddress = senderName ? `${senderName} <${from}>` : from;
-
-        const mailOptions = {
-            from: fromAddress,
-            to: to,
-            subject: subject,
-            text: message,
-            html: `<p>${message.replace(/\n/g, '<br>')}</p>`,
-            attachments: []
-        };
-
-        // Add uploaded files as attachments
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+        
+        // Build email
+        const user = req.session.user;
+        let emailContent = [];
+        const boundary = 'boundary_' + Date.now();
+        
+        // Headers
+        emailContent.push(`From: ${user.name} <${user.email}>`);
+        emailContent.push(`To: ${to}`);
+        emailContent.push(`Subject: ${subject}`);
+        emailContent.push('MIME-Version: 1.0');
+        
+        // Collect attachments
+        let attachments = [];
+        
+        // Add uploaded files
         if (req.files && req.files.length > 0) {
             req.files.forEach(file => {
-                mailOptions.attachments.push({
+                attachments.push({
                     filename: file.originalname,
                     path: file.path
                 });
             });
         }
-
+        
         // Add selected files from files folder
         const filesFolder = path.join(__dirname, 'public', 'files');
         if (selectedFiles) {
             const filesArray = Array.isArray(selectedFiles) ? selectedFiles : [selectedFiles];
             filesArray.forEach(fileName => {
-                if (fileName && fs.existsSync(path.join(filesFolder, fileName))) {
-                    mailOptions.attachments.push({
+                const filePath = path.join(filesFolder, fileName);
+                if (fileName && fs.existsSync(filePath)) {
+                    attachments.push({
                         filename: fileName,
-                        path: path.join(filesFolder, fileName)
+                        path: filePath
                     });
                 }
             });
         }
-
-        // Remove empty attachments array if no files
-        if (mailOptions.attachments.length === 0) {
-            delete mailOptions.attachments;
+        
+        if (attachments.length > 0) {
+            // Email with attachments
+            emailContent.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+            emailContent.push('');
+            emailContent.push(`--${boundary}`);
+            emailContent.push('Content-Type: text/html; charset=UTF-8');
+            emailContent.push('');
+            emailContent.push(`<p>${message.replace(/\n/g, '<br>')}</p>`);
+            
+            // Add attachments
+            for (const attachment of attachments) {
+                const fileContent = fs.readFileSync(attachment.path);
+                const base64File = fileContent.toString('base64');
+                const mimeType = getMimeType(attachment.filename);
+                
+                emailContent.push(`--${boundary}`);
+                emailContent.push(`Content-Type: ${mimeType}; name="${attachment.filename}"`);
+                emailContent.push('Content-Transfer-Encoding: base64');
+                emailContent.push(`Content-Disposition: attachment; filename="${attachment.filename}"`);
+                emailContent.push('');
+                emailContent.push(base64File);
+            }
+            
+            emailContent.push(`--${boundary}--`);
+        } else {
+            // Simple email without attachments
+            emailContent.push('Content-Type: text/html; charset=UTF-8');
+            emailContent.push('');
+            emailContent.push(`<p>${message.replace(/\n/g, '<br>')}</p>`);
         }
-
-        await transporter.sendMail(mailOptions);
-
+        
+        const rawEmail = Buffer.from(emailContent.join('\r\n'))
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+        
+        // Send email
+        await gmail.users.messages.send({
+            userId: 'me',
+            requestBody: {
+                raw: rawEmail
+            }
+        });
+        
         // Move uploaded files to files folder (save them)
         if (req.files && req.files.length > 0) {
             if (!fs.existsSync(filesFolder)) {
@@ -112,11 +240,10 @@ app.post('/send-email', upload.array('attachments', 10), async (req, res) => {
             }
             req.files.forEach(file => {
                 const destPath = path.join(filesFolder, file.originalname);
-                // Only move if not already exists
                 if (!fs.existsSync(destPath)) {
                     fs.renameSync(file.path, destPath);
                 } else {
-                    fs.unlinkSync(file.path); // Delete from uploads if already exists
+                    fs.unlinkSync(file.path);
                 }
             });
         }
@@ -134,6 +261,25 @@ app.post('/send-email', upload.array('attachments', 10), async (req, res) => {
         });
     }
 });
+
+// Helper function to get MIME type
+function getMimeType(filename) {
+    const ext = path.extname(filename).toLowerCase();
+    const mimeTypes = {
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.xls': 'application/vnd.ms-excel',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.txt': 'text/plain',
+        '.zip': 'application/zip'
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
+}
 
 // Route to get list of files in files folder
 app.get('/files', (req, res) => {
@@ -198,12 +344,16 @@ app.post('/templates/subjects/add', express.json(), (req, res) => {
     const subjectsFile = path.join(__dirname, 'public', 'templates', 'subjects.txt');
     
     try {
+        const templatesDir = path.dirname(subjectsFile);
+        if (!fs.existsSync(templatesDir)) {
+            fs.mkdirSync(templatesDir, { recursive: true });
+        }
+        
         let content = '';
         if (fs.existsSync(subjectsFile)) {
             content = fs.readFileSync(subjectsFile, 'utf-8');
         }
         
-        // Check if subject already exists
         const subjects = content.split('\n').filter(line => line.trim() !== '');
         if (!subjects.includes(subject.trim())) {
             fs.appendFileSync(subjectsFile, (content ? '\n' : '') + subject.trim());
@@ -239,6 +389,11 @@ app.post('/templates/messages/add', express.json(), (req, res) => {
     const messagesFile = path.join(__dirname, 'public', 'templates', 'messages.txt');
     
     try {
+        const templatesDir = path.dirname(messagesFile);
+        if (!fs.existsSync(templatesDir)) {
+            fs.mkdirSync(templatesDir, { recursive: true });
+        }
+        
         let content = '';
         if (fs.existsSync(messagesFile)) {
             content = fs.readFileSync(messagesFile, 'utf-8');
@@ -273,5 +428,5 @@ app.post('/templates/messages/delete', express.json(), (req, res) => {
 // Start server
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
-    console.log('Make sure to set EMAIL_USER and EMAIL_PASS in .env file');
+    console.log('Login with Google to start sending emails!');
 });

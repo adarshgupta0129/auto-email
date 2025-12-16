@@ -27,6 +27,98 @@ h1 {
     font-size: 2rem;
 }
 
+/* Login Section */
+.login-section {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.login-section p {
+    color: #666;
+    margin-bottom: 25px;
+    font-size: 16px;
+}
+
+.google-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    background: white;
+    color: #333;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.google-btn:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+    transform: translateY(-2px);
+}
+
+.google-btn svg {
+    flex-shrink: 0;
+}
+
+/* User Section */
+.user-section {
+    margin-bottom: 25px;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 12px;
+}
+
+.user-avatar {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.user-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.user-name {
+    font-weight: 600;
+    color: #333;
+    font-size: 15px;
+}
+
+.user-email {
+    color: #666;
+    font-size: 13px;
+}
+
+.logout-btn {
+    padding: 8px 16px;
+    background: #fff;
+    color: #ff4757;
+    border: 2px solid #ff4757;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+    background: #ff4757;
+    color: white;
+}
+
 .form-group {
     margin-bottom: 20px;
 }
