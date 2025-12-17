@@ -16,8 +16,8 @@
             <div class="nav-links">
                 <a href="/home.html" class="nav-link">Home</a>
                 <a href="/" class="nav-link active">Send Email</a>
-                <a href="/privacy.html" class="nav-link">Privacy</a>
-                <a href="/terms.html" class="nav-link">Terms</a>
+                <a href="/inbox.html" class="nav-link auth-only" style="display: none;">Inbox</a>
+                <a href="/sent.html" class="nav-link auth-only" style="display: none;">Sent</a>
             </div>
         </div>
     </nav>
@@ -172,6 +172,11 @@
                     loginSection.style.display = 'none';
                     userSection.style.display = 'block';
                     emailForm.style.display = 'block';
+                    
+                    // Show auth-only nav links
+                    document.querySelectorAll('.auth-only').forEach(el => {
+                        el.style.display = 'inline';
+                    });
                     
                     document.getElementById('userName').textContent = data.user.name;
                     document.getElementById('userEmail').textContent = data.user.email;

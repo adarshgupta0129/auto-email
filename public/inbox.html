@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inbox - Auto Email Sender</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23667eea'/><path d='M20 30h60v40H20z' fill='white'/><path d='M20 30l30 25 30-25' fill='none' stroke='%23667eea' stroke-width='4'/></svg>">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="app-page">
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-logo">📧 Auto Email</a>
+            <div class="nav-links">
+                <a href="/home.html" class="nav-link">Home</a>
+                <a href="/" class="nav-link">Send Email</a>
+                <a href="/inbox.html" class="nav-link active">Inbox</a>
+                <a href="/sent.html" class="nav-link">Sent</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="app-container">
+        <div class="container mail-container">
+            <h1>📥 Inbox</h1>
+            
+            <!-- Login Required -->
+            <div id="loginRequired" class="login-section">
+                <p>Sign in with your Google account to view inbox</p>
+                <a href="/auth/google" class="google-btn">
+                    <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
+                        <g transform="matrix(1, 0, 0, 1, 0, 0)">
+                            <path fill="#EA4335" d="M12 5c1.617 0 3.082.573 4.235 1.5L19.5 3.25C17.457 1.25 14.862 0 12 0 7.392 0 3.397 2.6 1.386 6.41l3.913 3.04C6.227 6.85 8.87 5 12 5z"/>
+                            <path fill="#4285F4" d="M23.896 12.265c0-.816-.066-1.636-.2-2.438H12v4.62h6.69c-.275 1.522-1.13 2.822-2.428 3.69l3.862 3c2.26-2.084 3.772-5.148 3.772-8.872z"/>
+                            <path fill="#FBBC05" d="M5.3 14.55c-.266-.79-.42-1.64-.42-2.55s.154-1.76.42-2.55L1.386 6.41C.504 8.16 0 10.022 0 12s.504 3.84 1.386 5.59L5.3 14.55z"/>
+                            <path fill="#34A853" d="M12 24c3.24 0 5.966-1.075 7.954-2.913l-3.862-3c-1.08.72-2.462 1.14-4.092 1.14-3.13 0-5.773-1.85-6.7-4.45L1.386 17.59C3.397 21.4 7.392 24 12 24z"/>
+                        </g>
+                    </svg>
+                    Sign in with Google
+                </a>
+            </div>
+
+            <!-- Mail Content -->
+            <div id="mailContent" style="display: none;">
+                <!-- Pagination Controls -->
+                <div class="mail-controls">
+                    <div class="limit-select">
+                        <label>Show:</label>
+                        <select id="limitSelect">
+                            <option value="10">10</option>
+                            <option value="25">25</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                    <button id="refreshBtn" class="refresh-btn">🔄 Refresh</button>
+                </div>
+
+                <!-- Messages List -->
+                <div id="messagesList" class="messages-list">
+                    <div class="loading">Loading...</div>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination">
+                    <button id="loadMoreBtn" class="load-more-btn" style="display: none;">Load More</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Message Detail Modal -->
+        <div id="messageModal" class="modal">
+            <div class="modal-content message-modal">
+                <div class="modal-header">
+                    <h2 id="modalSubject">Subject</h2>
+                    <button id="closeModal" class="close-btn">&times;</button>
+                </div>
+                <div class="message-detail">
+                    <div class="message-meta">
+                        <p><strong>From:</strong> <span id="modalFrom"></span></p>
+                        <p><strong>Date:</strong> <span id="modalDate"></span></p>
+                    </div>
+                    <div id="modalBody" class="message-body"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer app-footer">
+        <div class="footer-links">
+            <a href="/home.html">Home</a>
+            <a href="/privacy.html">Privacy Policy</a>
+            <a href="/terms.html">Terms of Service</a>
+        </div>
+        <p>&copy; 2024 Auto Email Sender</p>
+    </footer>
+
+    <script>
+        let currentPageToken = null;
+        let currentLimit = 10;
+
+        // Check login status
+        async function checkLogin() {
+            try {
+                const response = await fetch('/auth/user');
+                const data = await response.json();
+                
+                if (data.loggedIn) {
+                    document.getElementById('loginRequired').style.display = 'none';
+                    document.getElementById('mailContent').style.display = 'block';
+                    loadMessages();
+                } else {
+                    document.getElementById('loginRequired').style.display = 'block';
+                    document.getElementById('mailContent').style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Load messages
+        async function loadMessages(append = false) {
+            const messagesList = document.getElementById('messagesList');
+            
+            if (!append) {
+                messagesList.innerHTML = '<div class="loading">Loading...</div>';
+                currentPageToken = null;
+            }
+
+            try {
+                let url = `/api/inbox?limit=${currentLimit}`;
+                if (currentPageToken && append) {
+                    url += `&pageToken=${currentPageToken}`;
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.success) {
+                    if (!append) {
+                        messagesList.innerHTML = '';
+                    }
+
+                    if (data.messages.length === 0 && !append) {
+                        messagesList.innerHTML = '<div class="no-messages">No messages found</div>';
+                        return;
+                    }
+
+                    data.messages.forEach(msg => {
+                        const div = document.createElement('div');
+                        div.className = `message-item ${msg.isUnread ? 'unread' : ''}`;
+                        div.innerHTML = `
+                            <div class="message-sender">${escapeHtml(msg.from)}</div>
+                            <div class="message-date">${formatDate(msg.date)}</div>
+                            <div class="message-subject">${escapeHtml(msg.subject)}</div>
+                            <div class="message-snippet">${escapeHtml(msg.snippet)}</div>
+                        `;
+                        div.onclick = () => openMessage(msg.id);
+                        messagesList.appendChild(div);
+                    });
+
+                    currentPageToken = data.nextPageToken;
+                    document.getElementById('loadMoreBtn').style.display = 
+                        data.nextPageToken ? 'block' : 'none';
+                }
+            } catch (error) {
+                messagesList.innerHTML = '<div class="error">Error loading messages</div>';
+            }
+        }
+
+        // Open message detail
+        async function openMessage(id) {
+            const modal = document.getElementById('messageModal');
+            modal.style.display = 'flex';
+            
+            document.getElementById('modalSubject').textContent = 'Loading...';
+            document.getElementById('modalFrom').textContent = '';
+            document.getElementById('modalDate').textContent = '';
+            document.getElementById('modalBody').innerHTML = '<div class="loading">Loading...</div>';
+
+            try {
+                const response = await fetch(`/api/message/${id}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('modalSubject').textContent = data.message.subject;
+                    document.getElementById('modalFrom').textContent = data.message.from;
+                    document.getElementById('modalDate').textContent = formatDate(data.message.date);
+                    document.getElementById('modalBody').innerHTML = formatBody(data.message.body);
+                }
+            } catch (error) {
+                document.getElementById('modalBody').innerHTML = '<div class="error">Error loading message</div>';
+            }
+        }
+
+        // Close modal
+        document.getElementById('closeModal').onclick = () => {
+            document.getElementById('messageModal').style.display = 'none';
+        };
+
+        document.getElementById('messageModal').onclick = (e) => {
+            if (e.target.id === 'messageModal') {
+                document.getElementById('messageModal').style.display = 'none';
+            }
+        };
+
+        // Limit select change
+        document.getElementById('limitSelect').onchange = (e) => {
+            currentLimit = parseInt(e.target.value);
+            loadMessages();
+        };
+
+        // Refresh button
+        document.getElementById('refreshBtn').onclick = () => loadMessages();
+
+        // Load more button
+        document.getElementById('loadMoreBtn').onclick = () => loadMessages(true);
+
+        // Helper functions
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const isToday = date.toDateString() === now.toDateString();
+            
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const isYesterday = date.toDateString() === yesterday.toDateString();
+            
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            if (isToday) {
+                return `Today, ${timeStr}`;
+            }
+            if (isYesterday) {
+                return `Yesterday, ${timeStr}`;
+            }
+            
+            const dateOptions = { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined };
+            return `${date.toLocaleDateString([], dateOptions)}, ${timeStr}`;
+        }
+
+        function formatBody(body) {
+            if (!body) return '<p>No content</p>';
+            // If it looks like HTML, return as-is, otherwise wrap in pre
+            if (body.includes('<') && body.includes('>')) {
+                return body;
+            }
+            return `<pre>${escapeHtml(body)}</pre>`;
+        }
+
+        // Initialize
+        checkLogin();
+    </script>
+</body>
+</html>

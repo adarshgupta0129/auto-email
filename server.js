@@ -21,6 +21,7 @@ const oauth2Client = new google.auth.OAuth2(
 // Scopes for Gmail access
 const SCOPES = [
     'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile'
 ];
@@ -132,6 +133,171 @@ const requireAuth = (req, res, next) => {
     }
     next();
 };
+
+// Route to get inbox messages
+app.get('/api/inbox', requireAuth, async (req, res) => {
+    try {
+        const { limit = 10, pageToken } = req.query;
+        
+        oauth2Client.setCredentials(req.session.tokens);
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+        
+        const response = await gmail.users.messages.list({
+            userId: 'me',
+            labelIds: ['INBOX'],
+            maxResults: parseInt(limit),
+            pageToken: pageToken || undefined
+        });
+        
+        const messages = response.data.messages || [];
+        const nextPageToken = response.data.nextPageToken;
+        
+        // Get details for each message
+        const messageDetails = await Promise.all(
+            messages.map(async (msg) => {
+                const detail = await gmail.users.messages.get({
+                    userId: 'me',
+                    id: msg.id,
+                    format: 'metadata',
+                    metadataHeaders: ['From', 'Subject', 'Date']
+                });
+                
+                const headers = detail.data.payload.headers;
+                const getHeader = (name) => {
+                    const header = headers.find(h => h.name === name);
+                    return header ? header.value : '';
+                };
+                
+                return {
+                    id: msg.id,
+                    threadId: msg.threadId,
+                    from: getHeader('From'),
+                    subject: getHeader('Subject') || '(No Subject)',
+                    date: getHeader('Date'),
+                    snippet: detail.data.snippet,
+                    isUnread: detail.data.labelIds?.includes('UNREAD')
+                };
+            })
+        );
+        
+        res.json({
+            success: true,
+            messages: messageDetails,
+            nextPageToken
+        });
+        
+    } catch (error) {
+        console.error('Error fetching inbox:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Route to get sent messages
+app.get('/api/sent', requireAuth, async (req, res) => {
+    try {
+        const { limit = 10, pageToken } = req.query;
+        
+        oauth2Client.setCredentials(req.session.tokens);
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+        
+        const response = await gmail.users.messages.list({
+            userId: 'me',
+            labelIds: ['SENT'],
+            maxResults: parseInt(limit),
+            pageToken: pageToken || undefined
+        });
+        
+        const messages = response.data.messages || [];
+        const nextPageToken = response.data.nextPageToken;
+        
+        // Get details for each message
+        const messageDetails = await Promise.all(
+            messages.map(async (msg) => {
+                const detail = await gmail.users.messages.get({
+                    userId: 'me',
+                    id: msg.id,
+                    format: 'metadata',
+                    metadataHeaders: ['To', 'Subject', 'Date']
+                });
+                
+                const headers = detail.data.payload.headers;
+                const getHeader = (name) => {
+                    const header = headers.find(h => h.name === name);
+                    return header ? header.value : '';
+                };
+                
+                return {
+                    id: msg.id,
+                    threadId: msg.threadId,
+                    to: getHeader('To'),
+                    subject: getHeader('Subject') || '(No Subject)',
+                    date: getHeader('Date'),
+                    snippet: detail.data.snippet
+                };
+            })
+        );
+        
+        res.json({
+            success: true,
+            messages: messageDetails,
+            nextPageToken
+        });
+        
+    } catch (error) {
+        console.error('Error fetching sent:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Route to get single message detail
+app.get('/api/message/:id', requireAuth, async (req, res) => {
+    try {
+        oauth2Client.setCredentials(req.session.tokens);
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+        
+        const detail = await gmail.users.messages.get({
+            userId: 'me',
+            id: req.params.id,
+            format: 'full'
+        });
+        
+        const headers = detail.data.payload.headers;
+        const getHeader = (name) => {
+            const header = headers.find(h => h.name === name);
+            return header ? header.value : '';
+        };
+        
+        // Get message body
+        let body = '';
+        const payload = detail.data.payload;
+        
+        if (payload.body && payload.body.data) {
+            body = Buffer.from(payload.body.data, 'base64').toString('utf-8');
+        } else if (payload.parts) {
+            const textPart = payload.parts.find(p => p.mimeType === 'text/plain') ||
+                           payload.parts.find(p => p.mimeType === 'text/html');
+            if (textPart && textPart.body && textPart.body.data) {
+                body = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
+            }
+        }
+        
+        res.json({
+            success: true,
+            message: {
+                id: detail.data.id,
+                from: getHeader('From'),
+                to: getHeader('To'),
+                subject: getHeader('Subject') || '(No Subject)',
+                date: getHeader('Date'),
+                body: body
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error fetching message:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
 
 // Helper function to get user-specific folder
 function getUserFolder(userEmail, type) {
