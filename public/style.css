@@ -1026,6 +1026,65 @@ select {
     .app-container {
         padding: 10px;
     }
+
+    .container {
+        padding: 25px 20px;
+    }
+
+    h1 {
+        font-size: 1.4rem;
+    }
+
+    label {
+        font-size: 14px;
+    }
+
+    input[type="email"],
+    input[type="text"],
+    textarea,
+    select {
+        font-size: 14px;
+        padding: 10px 12px;
+    }
+
+    .template-select {
+        font-size: 13px;
+    }
+
+    .delete-template-btn,
+    .add-template-btn {
+        width: 38px;
+        height: 38px;
+        font-size: 16px;
+    }
+
+    .scan-btn {
+        padding: 10px 15px;
+        font-size: 13px;
+    }
+
+    .send-btn {
+        font-size: 16px;
+        padding: 12px;
+    }
+
+    .user-info {
+        flex-wrap: wrap;
+    }
+
+    .logout-btn {
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+
+    .file-name {
+        font-size: 13px;
+    }
+
+    .delete-file-btn {
+        font-size: 11px;
+        padding: 3px 6px;
+    }
 }
 
 @media (max-width: 480px) {
@@ -1034,17 +1093,25 @@ select {
     }
 
     .container {
-        padding: 20px;
-        margin: 0 10px 30px;
+        padding: 20px 15px;
+        margin: 0 5px 20px;
         border-radius: 15px;
     }
 
-    .app-container {
-        padding: 10px;
+    h1 {
+        font-size: 1.3rem;
     }
 
-    h1 {
-        font-size: 1.5rem;
+    label {
+        font-size: 13px;
+    }
+
+    input[type="email"],
+    input[type="text"],
+    textarea,
+    select {
+        font-size: 13px;
+        padding: 10px;
     }
 
     .input-with-button {
@@ -1055,6 +1122,43 @@ select {
         width: 100%;
     }
 
+    /* Keep template buttons inline on right */
+    .template-row {
+        flex-direction: row;
+        gap: 10px;
+    }
+
+    .input-with-add {
+        flex-direction: row;
+        gap: 10px;
+    }
+
+    .delete-template-btn,
+    .add-template-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    .user-details {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .user-name {
+        font-size: 14px;
+    }
+
+    .user-email {
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+/* Only stack buttons vertically on very small screens */
+@media (max-width: 340px) {
     .template-row {
         flex-direction: column;
         gap: 5px;
@@ -1062,6 +1166,7 @@ select {
 
     .delete-template-btn {
         width: 100%;
+        height: 40px;
     }
 
     .input-with-add {
@@ -1071,10 +1176,7 @@ select {
 
     .add-template-btn {
         width: 100%;
-    }
-
-    .user-info {
-        flex-wrap: wrap;
+        height: 40px;
     }
 
     .logout-btn {
