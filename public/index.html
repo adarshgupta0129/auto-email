@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/@zxing/library@latest"></script>
 </head>
-<body>
+<body class="app-page">
     <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-container">
@@ -44,7 +44,7 @@
         <!-- User Info Section -->
         <div id="userSection" class="user-section" style="display: none;">
             <div class="user-info">
-                <img id="userPicture" src="" alt="Profile" class="user-avatar">
+                <img id="userPicture" src="" alt="Profile" class="user-avatar" referrerpolicy="no-referrer">
                 <div class="user-details">
                     <span id="userName" class="user-name"></span>
                     <span id="userEmail" class="user-email"></span>
@@ -175,7 +175,16 @@
                     
                     document.getElementById('userName').textContent = data.user.name;
                     document.getElementById('userEmail').textContent = data.user.email;
-                    document.getElementById('userPicture').src = data.user.picture || '';
+                    
+                    const userPicture = document.getElementById('userPicture');
+                    if (data.user.picture) {
+                        userPicture.src = data.user.picture;
+                        userPicture.onerror = function() {
+                            this.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%23667eea"/><text x="50" y="65" font-size="40" text-anchor="middle" fill="white">' + data.user.name.charAt(0).toUpperCase() + '</text></svg>';
+                        };
+                    } else {
+                        userPicture.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%23667eea"/><text x="50" y="65" font-size="40" text-anchor="middle" fill="white">' + data.user.name.charAt(0).toUpperCase() + '</text></svg>';
+                    }
                     
                     // Load templates and files
                     loadFiles();

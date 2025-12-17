@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 8000;
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
+    process.env.ENV === 'production' ? process.env.GOOGLE_REDIRECT_URI : process.env.LOCAL_GOOGLE_REDIRECT_URI
 );
 
 // Scopes for Gmail access
@@ -133,6 +133,43 @@ const requireAuth = (req, res, next) => {
     next();
 };
 
+// Helper function to get user-specific folder
+function getUserFolder(userEmail, type) {
+    // Sanitize email for folder name
+    const safeEmail = userEmail.replace(/[^a-zA-Z0-9]/g, '_');
+    const userFolder = path.join(__dirname, 'user_data', safeEmail, type);
+    
+    if (!fs.existsSync(userFolder)) {
+        fs.mkdirSync(userFolder, { recursive: true });
+        
+        // Create default templates for new users
+        if (type === 'templates') {
+            const subjectsFile = path.join(userFolder, 'subjects.txt');
+            const messagesFile = path.join(userFolder, 'messages.txt');
+            
+            if (!fs.existsSync(subjectsFile)) {
+                fs.writeFileSync(subjectsFile, 'Invoice for Services\nMeeting Request');
+            }
+            if (!fs.existsSync(messagesFile)) {
+                fs.writeFileSync(messagesFile, `---MESSAGE---
+Dear Sir/Madam,
+
+Please find the attached document for your reference.
+
+Best regards
+---MESSAGE---
+Hello,
+
+Thank you for your email. I will get back to you soon.
+
+Best regards`);
+            }
+        }
+    }
+    
+    return userFolder;
+}
+
 // Route to send email using Gmail API
 app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req, res) => {
     try {
@@ -181,8 +218,9 @@ app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req
             });
         }
         
-        // Add selected files from files folder
-        const filesFolder = path.join(__dirname, 'public', 'files');
+        // Add selected files from user's files folder
+        const userEmail = req.session.user.email;
+        const filesFolder = getUserFolder(userEmail, 'files');
         if (selectedFiles) {
             const filesArray = Array.isArray(selectedFiles) ? selectedFiles : [selectedFiles];
             filesArray.forEach(fileName => {
@@ -241,13 +279,11 @@ app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req
             }
         });
         
-        // Move uploaded files to files folder (save them)
+        // Move uploaded files to user's files folder (save them)
         if (req.files && req.files.length > 0) {
-            if (!fs.existsSync(filesFolder)) {
-                fs.mkdirSync(filesFolder, { recursive: true });
-            }
+            const userFilesFolder = getUserFolder(userEmail, 'files');
             req.files.forEach(file => {
-                const destPath = path.join(filesFolder, file.originalname);
+                const destPath = path.join(userFilesFolder, file.originalname);
                 if (!fs.existsSync(destPath)) {
                     fs.renameSync(file.path, destPath);
                 } else {
@@ -289,23 +325,20 @@ function getMimeType(filename) {
     return mimeTypes[ext] || 'application/octet-stream';
 }
 
-// Route to get list of files in files folder
-app.get('/files', (req, res) => {
-    const filesFolder = path.join(__dirname, 'public', 'files');
-    
-    if (!fs.existsSync(filesFolder)) {
-        fs.mkdirSync(filesFolder, { recursive: true });
-        return res.json({ files: [] });
-    }
+// Route to get list of files in user's files folder
+app.get('/files', requireAuth, (req, res) => {
+    const userEmail = req.session.user.email;
+    const filesFolder = getUserFolder(userEmail, 'files');
 
     const files = fs.readdirSync(filesFolder).filter(file => !file.startsWith('.'));
     res.json({ files });
 });
 
-// Route to delete file from files folder
-app.post('/files/delete', express.json(), (req, res) => {
+// Route to delete file from user's files folder
+app.post('/files/delete', requireAuth, express.json(), (req, res) => {
     const { fileName } = req.body;
-    const filesFolder = path.join(__dirname, 'public', 'files');
+    const userEmail = req.session.user.email;
+    const filesFolder = getUserFolder(userEmail, 'files');
     const filePath = path.join(filesFolder, fileName);
     
     try {
@@ -320,9 +353,11 @@ app.post('/files/delete', express.json(), (req, res) => {
     }
 });
 
-// Route to get predefined subjects
-app.get('/templates/subjects', (req, res) => {
-    const subjectsFile = path.join(__dirname, 'public', 'templates', 'subjects.txt');
+// Route to get user's predefined subjects
+app.get('/templates/subjects', requireAuth, (req, res) => {
+    const userEmail = req.session.user.email;
+    const templatesFolder = getUserFolder(userEmail, 'templates');
+    const subjectsFile = path.join(templatesFolder, 'subjects.txt');
     
     if (!fs.existsSync(subjectsFile)) {
         return res.json({ subjects: [] });
@@ -333,9 +368,11 @@ app.get('/templates/subjects', (req, res) => {
     res.json({ subjects });
 });
 
-// Route to get predefined messages
-app.get('/templates/messages', (req, res) => {
-    const messagesFile = path.join(__dirname, 'public', 'templates', 'messages.txt');
+// Route to get user's predefined messages
+app.get('/templates/messages', requireAuth, (req, res) => {
+    const userEmail = req.session.user.email;
+    const templatesFolder = getUserFolder(userEmail, 'templates');
+    const messagesFile = path.join(templatesFolder, 'messages.txt');
     
     if (!fs.existsSync(messagesFile)) {
         return res.json({ messages: [] });
@@ -346,17 +383,14 @@ app.get('/templates/messages', (req, res) => {
     res.json({ messages: messages.map(msg => msg.trim()) });
 });
 
-// Route to add new subject
-app.post('/templates/subjects/add', express.json(), (req, res) => {
+// Route to add new subject for user
+app.post('/templates/subjects/add', requireAuth, express.json(), (req, res) => {
     const { subject } = req.body;
-    const subjectsFile = path.join(__dirname, 'public', 'templates', 'subjects.txt');
+    const userEmail = req.session.user.email;
+    const templatesFolder = getUserFolder(userEmail, 'templates');
+    const subjectsFile = path.join(templatesFolder, 'subjects.txt');
     
     try {
-        const templatesDir = path.dirname(subjectsFile);
-        if (!fs.existsSync(templatesDir)) {
-            fs.mkdirSync(templatesDir, { recursive: true });
-        }
-        
         let content = '';
         if (fs.existsSync(subjectsFile)) {
             content = fs.readFileSync(subjectsFile, 'utf-8');
@@ -373,10 +407,12 @@ app.post('/templates/subjects/add', express.json(), (req, res) => {
     }
 });
 
-// Route to delete subject
-app.post('/templates/subjects/delete', express.json(), (req, res) => {
+// Route to delete subject for user
+app.post('/templates/subjects/delete', requireAuth, express.json(), (req, res) => {
     const { subject } = req.body;
-    const subjectsFile = path.join(__dirname, 'public', 'templates', 'subjects.txt');
+    const userEmail = req.session.user.email;
+    const templatesFolder = getUserFolder(userEmail, 'templates');
+    const subjectsFile = path.join(templatesFolder, 'subjects.txt');
     
     try {
         if (fs.existsSync(subjectsFile)) {
@@ -391,17 +427,14 @@ app.post('/templates/subjects/delete', express.json(), (req, res) => {
     }
 });
 
-// Route to add new message
-app.post('/templates/messages/add', express.json(), (req, res) => {
+// Route to add new message for user
+app.post('/templates/messages/add', requireAuth, express.json(), (req, res) => {
     const { message } = req.body;
-    const messagesFile = path.join(__dirname, 'public', 'templates', 'messages.txt');
+    const userEmail = req.session.user.email;
+    const templatesFolder = getUserFolder(userEmail, 'templates');
+    const messagesFile = path.join(templatesFolder, 'messages.txt');
     
     try {
-        const templatesDir = path.dirname(messagesFile);
-        if (!fs.existsSync(templatesDir)) {
-            fs.mkdirSync(templatesDir, { recursive: true });
-        }
-        
         let content = '';
         if (fs.existsSync(messagesFile)) {
             content = fs.readFileSync(messagesFile, 'utf-8');
@@ -415,10 +448,12 @@ app.post('/templates/messages/add', express.json(), (req, res) => {
     }
 });
 
-// Route to delete message
-app.post('/templates/messages/delete', express.json(), (req, res) => {
+// Route to delete message for user
+app.post('/templates/messages/delete', requireAuth, express.json(), (req, res) => {
     const { message } = req.body;
-    const messagesFile = path.join(__dirname, 'public', 'templates', 'messages.txt');
+    const userEmail = req.session.user.email;
+    const templatesFolder = getUserFolder(userEmail, 'templates');
+    const messagesFile = path.join(templatesFolder, 'messages.txt');
     
     try {
         if (fs.existsSync(messagesFile)) {
