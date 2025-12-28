@@ -80,6 +80,7 @@
                         <p><strong>To:</strong> <span id="modalTo"></span></p>
                         <p><strong>Date:</strong> <span id="modalDate"></span></p>
                     </div>
+                    <div id="modalAttachments" class="message-attachments"></div>
                     <div id="modalBody" class="message-body"></div>
                 </div>
             </div>
@@ -177,6 +178,7 @@
             document.getElementById('modalSubject').textContent = 'Loading...';
             document.getElementById('modalTo').textContent = '';
             document.getElementById('modalDate').textContent = '';
+            document.getElementById('modalAttachments').innerHTML = '';
             document.getElementById('modalBody').innerHTML = '<div class="loading">Loading...</div>';
 
             try {
@@ -188,6 +190,26 @@
                     document.getElementById('modalTo').textContent = data.message.to;
                     document.getElementById('modalDate').textContent = formatDate(data.message.date);
                     document.getElementById('modalBody').innerHTML = formatBody(data.message.body);
+                    
+                    // Show attachments
+                    const attachmentsDiv = document.getElementById('modalAttachments');
+                    if (data.message.attachments && data.message.attachments.length > 0) {
+                        attachmentsDiv.innerHTML = `
+                            <div class="attachments-header">📎 Attachments (${data.message.attachments.length})</div>
+                            <div class="attachments-list">
+                                ${data.message.attachments.map(att => `
+                                    <a href="/api/message/${id}/attachment/${att.id}?filename=${encodeURIComponent(att.filename)}" 
+                                       class="attachment-item" download="${att.filename}">
+                                        <span class="attachment-icon">${getFileIcon(att.filename)}</span>
+                                        <span class="attachment-name">${escapeHtml(att.filename)}</span>
+                                        <span class="attachment-size">${formatSize(att.size)}</span>
+                                    </a>
+                                `).join('')}
+                            </div>
+                        `;
+                    } else {
+                        attachmentsDiv.innerHTML = '';
+                    }
                 }
             } catch (error) {
                 document.getElementById('modalBody').innerHTML = '<div class="error">Error loading message</div>';
@@ -253,6 +275,29 @@
                 return body;
             }
             return `<pre>${escapeHtml(body)}</pre>`;
+        }
+
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const icons = {
+                'pdf': '📄',
+                'doc': '📝', 'docx': '📝',
+                'xls': '📊', 'xlsx': '📊',
+                'ppt': '📽️', 'pptx': '📽️',
+                'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️',
+                'zip': '📦', 'rar': '📦',
+                'mp3': '🎵', 'wav': '🎵',
+                'mp4': '🎬', 'avi': '🎬', 'mov': '🎬',
+                'txt': '📃',
+            };
+            return icons[ext] || '📎';
+        }
+
+        function formatSize(bytes) {
+            if (!bytes) return '';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
 
         // Initialize

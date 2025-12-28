@@ -1156,6 +1156,77 @@ select {
     margin: 0;
 }
 
+/* Attachments Styles */
+.message-attachments {
+    margin-bottom: 15px;
+}
+
+.attachments-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #eee;
+}
+
+.attachments-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.attachment-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 15px;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #333;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.attachment-item:hover {
+    background: #e8f0fe;
+    border-color: #667eea;
+}
+
+.attachment-icon {
+    font-size: 20px;
+}
+
+.attachment-name {
+    font-size: 13px;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attachment-size {
+    font-size: 11px;
+    color: #888;
+}
+
+@media (max-width: 480px) {
+    .attachments-list {
+        flex-direction: column;
+    }
+
+    .attachment-item {
+        width: 100%;
+    }
+
+    .attachment-name {
+        max-width: none;
+        flex: 1;
+    }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .navbar {

@@ -267,18 +267,38 @@ app.get('/api/message/:id', requireAuth, async (req, res) => {
             return header ? header.value : '';
         };
         
-        // Get message body
+        // Get message body and attachments
         let body = '';
+        let attachments = [];
         const payload = detail.data.payload;
         
-        if (payload.body && payload.body.data) {
-            body = Buffer.from(payload.body.data, 'base64').toString('utf-8');
-        } else if (payload.parts) {
-            const textPart = payload.parts.find(p => p.mimeType === 'text/plain') ||
-                           payload.parts.find(p => p.mimeType === 'text/html');
-            if (textPart && textPart.body && textPart.body.data) {
-                body = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
+        // Function to recursively find body and attachments
+        function processPayload(part) {
+            if (part.filename && part.filename.length > 0 && part.body.attachmentId) {
+                attachments.push({
+                    id: part.body.attachmentId,
+                    filename: part.filename,
+                    mimeType: part.mimeType,
+                    size: part.body.size
+                });
             }
+            
+            if (part.mimeType === 'text/plain' && !body && part.body.data) {
+                body = Buffer.from(part.body.data, 'base64').toString('utf-8');
+            } else if (part.mimeType === 'text/html' && part.body.data) {
+                body = Buffer.from(part.body.data, 'base64').toString('utf-8');
+            }
+            
+            if (part.parts) {
+                part.parts.forEach(processPayload);
+            }
+        }
+        
+        processPayload(payload);
+        
+        // If body is still empty, try direct body
+        if (!body && payload.body && payload.body.data) {
+            body = Buffer.from(payload.body.data, 'base64').toString('utf-8');
         }
         
         res.json({
@@ -289,12 +309,44 @@ app.get('/api/message/:id', requireAuth, async (req, res) => {
                 to: getHeader('To'),
                 subject: getHeader('Subject') || '(No Subject)',
                 date: getHeader('Date'),
-                body: body
+                body: body,
+                attachments: attachments
             }
         });
         
     } catch (error) {
         console.error('Error fetching message:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Route to download attachment
+app.get('/api/message/:messageId/attachment/:attachmentId', requireAuth, async (req, res) => {
+    try {
+        const { messageId, attachmentId } = req.params;
+        const { filename } = req.query;
+        
+        oauth2Client.setCredentials(req.session.tokens);
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+        
+        const attachment = await gmail.users.messages.attachments.get({
+            userId: 'me',
+            messageId: messageId,
+            id: attachmentId
+        });
+        
+        const data = attachment.data.data;
+        const buffer = Buffer.from(data, 'base64');
+        
+        // Set headers for download
+        res.setHeader('Content-Disposition', `attachment; filename="${filename || 'attachment'}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Length', buffer.length);
+        
+        res.send(buffer);
+        
+    } catch (error) {
+        console.error('Error downloading attachment:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
