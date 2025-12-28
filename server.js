@@ -38,14 +38,15 @@ if (process.env.ENV === 'production') {
 }
 
 app.use(session({
-    secret: process.env.SESSION_SECRET,
-    resave: false,
+    secret: process.env.SESSION_SECRET || 'your-secret-key',
+    resave: true,
     saveUninitialized: false,
+    rolling: true, // Reset cookie expiration on each request
     cookie: { 
-        secure: process.env.ENV === 'production', // true only in production with HTTPS
+        secure: process.env.ENV === 'production',
         httpOnly: true,
         sameSite: process.env.ENV === 'production' ? 'none' : 'lax',
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     }
 }));
 
@@ -100,7 +101,14 @@ app.get('/auth/google/callback', async (req, res) => {
             picture: userInfo.data.picture
         };
         
-        res.redirect('/?login=success');
+        // Explicitly save session before redirect
+        req.session.save((err) => {
+            if (err) {
+                console.error('Session save error:', err);
+                return res.redirect('/?login=error');
+            }
+            res.redirect('/?login=success');
+        });
     } catch (error) {
         console.error('Auth error:', error);
         res.redirect('/?login=error');
