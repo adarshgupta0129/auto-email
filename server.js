@@ -10,6 +10,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'adarshgupta0129@gmail.com';
 
 // Google OAuth2 configuration
 const oauth2Client = new google.auth.OAuth2(
@@ -93,13 +94,18 @@ app.get('/auth/google/callback', async (req, res) => {
         const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
         const userInfo = await oauth2.userinfo.get();
         
-        // Store in session
-        req.session.tokens = tokens;
-        req.session.user = {
+        const user = {
             email: userInfo.data.email,
             name: userInfo.data.name,
             picture: userInfo.data.picture
         };
+        
+        // Track user login
+        trackUserLogin(user);
+        
+        // Store in session
+        req.session.tokens = tokens;
+        req.session.user = user;
         
         // Explicitly save session before redirect
         req.session.save((err) => {
@@ -396,6 +402,87 @@ Best regards`);
     return userFolder;
 }
 
+// Function to track user login
+function trackUserLogin(user) {
+    const usersFile = path.join(__dirname, 'user_data', 'users.json');
+    let users = {};
+    
+    if (fs.existsSync(usersFile)) {
+        try {
+            users = JSON.parse(fs.readFileSync(usersFile, 'utf-8'));
+        } catch (e) {
+            users = {};
+        }
+    }
+    
+    const now = new Date().toISOString();
+    if (users[user.email]) {
+        users[user.email].lastLogin = now;
+        users[user.email].loginCount = (users[user.email].loginCount || 0) + 1;
+        users[user.email].name = user.name;
+        users[user.email].picture = user.picture;
+    } else {
+        users[user.email] = {
+            email: user.email,
+            name: user.name,
+            picture: user.picture,
+            firstLogin: now,
+            lastLogin: now,
+            loginCount: 1
+        };
+    }
+    
+    // Ensure user_data directory exists
+    const userDataDir = path.join(__dirname, 'user_data');
+    if (!fs.existsSync(userDataDir)) {
+        fs.mkdirSync(userDataDir, { recursive: true });
+    }
+    
+    fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+}
+
+// Admin middleware - only for admin email
+const requireAdmin = (req, res, next) => {
+    if (!req.session.user || req.session.user.email !== ADMIN_EMAIL) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Access denied. Admin only.' 
+        });
+    }
+    next();
+};
+
+// Admin API - Get all users
+app.get('/api/admin/users', requireAuth, requireAdmin, (req, res) => {
+    const usersFile = path.join(__dirname, 'user_data', 'users.json');
+    
+    if (!fs.existsSync(usersFile)) {
+        return res.json({ success: true, users: [], totalUsers: 0 });
+    }
+    
+    try {
+        const users = JSON.parse(fs.readFileSync(usersFile, 'utf-8'));
+        const userList = Object.values(users).sort((a, b) => 
+            new Date(b.lastLogin) - new Date(a.lastLogin)
+        );
+        
+        res.json({ 
+            success: true, 
+            users: userList,
+            totalUsers: userList.length
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Check if current user is admin
+app.get('/api/admin/check', requireAuth, (req, res) => {
+    res.json({ 
+        isAdmin: req.session.user.email === ADMIN_EMAIL 
+    });
+});
+
 // Route to send email using Gmail API
 app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req, res) => {
     try {
@@ -405,6 +492,18 @@ app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req
             return res.status(400).json({ 
                 success: false, 
                 message: 'To, Subject and Message are required' 
+            });
+        }
+
+        // Parse multiple email addresses (split by comma or semicolon)
+        const emailAddresses = to.split(/[,;]/)
+            .map(email => email.trim())
+            .filter(email => email.length > 0);
+
+        if (emailAddresses.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Please provide at least one valid email address' 
             });
         }
 
@@ -420,16 +519,9 @@ app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req
 
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
-        // Build email
+        // Build email content (common for all recipients)
         const user = req.session.user;
-        let emailContent = [];
         const boundary = 'boundary_' + Date.now();
-        
-        // Headers
-        emailContent.push(`From: ${user.name} <${user.email}>`);
-        emailContent.push(`To: ${to}`);
-        emailContent.push(`Subject: ${subject}`);
-        emailContent.push('MIME-Version: 1.0');
         
         // Collect attachments
         let attachments = [];
@@ -459,51 +551,69 @@ app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req
                 }
             });
         }
-        
-        if (attachments.length > 0) {
-            // Email with attachments
-            emailContent.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-            emailContent.push('');
-            emailContent.push(`--${boundary}`);
-            emailContent.push('Content-Type: text/html; charset=UTF-8');
-            emailContent.push('');
-            emailContent.push(`<p>${message.replace(/\n/g, '<br>')}</p>`);
-            
-            // Add attachments
-            for (const attachment of attachments) {
-                const fileContent = fs.readFileSync(attachment.path);
-                const base64File = fileContent.toString('base64');
-                const mimeType = getMimeType(attachment.filename);
+
+        // Send email to each recipient
+        const results = [];
+        for (const recipientEmail of emailAddresses) {
+            try {
+                let emailContent = [];
                 
-                emailContent.push(`--${boundary}`);
-                emailContent.push(`Content-Type: ${mimeType}; name="${attachment.filename}"`);
-                emailContent.push('Content-Transfer-Encoding: base64');
-                emailContent.push(`Content-Disposition: attachment; filename="${attachment.filename}"`);
-                emailContent.push('');
-                emailContent.push(base64File);
+                // Headers
+                emailContent.push(`From: ${user.name} <${user.email}>`);
+                emailContent.push(`To: ${recipientEmail}`);
+                emailContent.push(`Subject: ${subject}`);
+                emailContent.push('MIME-Version: 1.0');
+                
+                if (attachments.length > 0) {
+                    // Email with attachments
+                    emailContent.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+                    emailContent.push('');
+                    emailContent.push(`--${boundary}`);
+                    emailContent.push('Content-Type: text/html; charset=UTF-8');
+                    emailContent.push('');
+                    emailContent.push(`<p>${message.replace(/\n/g, '<br>')}</p>`);
+                    
+                    // Add attachments
+                    for (const attachment of attachments) {
+                        const fileContent = fs.readFileSync(attachment.path);
+                        const base64File = fileContent.toString('base64');
+                        const mimeType = getMimeType(attachment.filename);
+                        
+                        emailContent.push(`--${boundary}`);
+                        emailContent.push(`Content-Type: ${mimeType}; name="${attachment.filename}"`);
+                        emailContent.push('Content-Transfer-Encoding: base64');
+                        emailContent.push(`Content-Disposition: attachment; filename="${attachment.filename}"`);
+                        emailContent.push('');
+                        emailContent.push(base64File);
+                    }
+                    
+                    emailContent.push(`--${boundary}--`);
+                } else {
+                    // Simple email without attachments
+                    emailContent.push('Content-Type: text/html; charset=UTF-8');
+                    emailContent.push('');
+                    emailContent.push(`<p>${message.replace(/\n/g, '<br>')}</p>`);
+                }
+                
+                const rawEmail = Buffer.from(emailContent.join('\r\n'))
+                    .toString('base64')
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_')
+                    .replace(/=+$/, '');
+                
+                // Send email
+                await gmail.users.messages.send({
+                    userId: 'me',
+                    requestBody: {
+                        raw: rawEmail
+                    }
+                });
+                
+                results.push({ email: recipientEmail, success: true });
+            } catch (err) {
+                results.push({ email: recipientEmail, success: false, error: err.message });
             }
-            
-            emailContent.push(`--${boundary}--`);
-        } else {
-            // Simple email without attachments
-            emailContent.push('Content-Type: text/html; charset=UTF-8');
-            emailContent.push('');
-            emailContent.push(`<p>${message.replace(/\n/g, '<br>')}</p>`);
         }
-        
-        const rawEmail = Buffer.from(emailContent.join('\r\n'))
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-        
-        // Send email
-        await gmail.users.messages.send({
-            userId: 'me',
-            requestBody: {
-                raw: rawEmail
-            }
-        });
         
         // Move uploaded files to user's files folder (save them)
         if (req.files && req.files.length > 0) {
@@ -518,10 +628,25 @@ app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req
             });
         }
 
-        res.json({ 
-            success: true, 
-            message: 'Email sent successfully!' 
-        });
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
+
+        if (failCount === 0) {
+            res.json({ 
+                success: true, 
+                message: `Email sent successfully to ${successCount} recipient(s)!` 
+            });
+        } else if (successCount === 0) {
+            res.status(500).json({ 
+                success: false, 
+                message: 'Failed to send email to all recipients' 
+            });
+        } else {
+            res.json({ 
+                success: true, 
+                message: `Email sent to ${successCount} recipient(s). Failed for ${failCount} recipient(s).` 
+            });
+        }
 
     } catch (error) {
         console.error('Error sending email:', error);

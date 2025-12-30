@@ -18,6 +18,7 @@
                 <a href="/" class="nav-link active">Send Email</a>
                 <a href="/inbox.html" class="nav-link auth-only" style="display: none;">Inbox</a>
                 <a href="/sent.html" class="nav-link auth-only" style="display: none;">Sent</a>
+                <a href="/admin.html" class="nav-link admin-link admin-only" style="display: none;">👑 Admin</a>
             </div>
         </div>
     </nav>
@@ -58,7 +59,7 @@
             <div class="form-group">
                 <label for="to">To Email:</label>
                 <div class="input-with-button">
-                    <input type="email" id="to" name="to" placeholder="recipient@gmail.com" required>
+                    <input type="text" id="to" name="to" placeholder="email@example.com (separate multiple with , or ;)" required>
                     <button type="button" id="scanBtn" class="scan-btn">📷 Scan</button>
                 </div>
             </div>
@@ -162,6 +163,21 @@
         let stream = null;
         let codeReader = null;
 
+        // Check if user is admin
+        async function checkAdminStatus() {
+            try {
+                const response = await fetch('/api/admin/check');
+                const data = await response.json();
+                if (data.isAdmin) {
+                    document.querySelectorAll('.admin-only').forEach(el => {
+                        el.style.display = 'inline';
+                    });
+                }
+            } catch (error) {
+                console.error('Admin check error:', error);
+            }
+        }
+
         // Check login status on page load
         async function checkLoginStatus() {
             try {
@@ -177,6 +193,9 @@
                     document.querySelectorAll('.auth-only').forEach(el => {
                         el.style.display = 'inline';
                     });
+                    
+                    // Check if admin and show admin link
+                    checkAdminStatus();
                     
                     document.getElementById('userName').textContent = data.user.name;
                     document.getElementById('userEmail').textContent = data.user.email;
