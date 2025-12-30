@@ -17,6 +17,7 @@
                 <a href="/" class="nav-link">Send Email</a>
                 <a href="/inbox.html" class="nav-link">Inbox</a>
                 <a href="/sent.html" class="nav-link">Sent</a>
+                <a href="/admin.html" class="nav-link admin-link admin-only" style="display: none;">👑 Admin</a>
             </div>
         </div>
     </nav>
@@ -134,5 +135,21 @@
             <p>&copy; 2024 Auto Email Sender. All rights reserved.</p>
         </div>
     </footer>
+
+    <script>
+        // Check if user is admin
+        async function checkAdminStatus() {
+            try {
+                const response = await fetch('/api/admin/check');
+                const data = await response.json();
+                if (data.isAdmin) {
+                    document.querySelectorAll('.admin-only').forEach(el => {
+                        el.style.display = 'inline';
+                    });
+                }
+            } catch (error) {}
+        }
+        checkAdminStatus();
+    </script>
 </body>
 </html>

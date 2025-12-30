@@ -17,6 +17,7 @@
                 <a href="/" class="nav-link">Send Email</a>
                 <a href="/inbox.html" class="nav-link">Inbox</a>
                 <a href="/sent.html" class="nav-link">Sent</a>
+                <a href="/admin.html" class="nav-link admin-link admin-only" style="display: none;">👑 Admin</a>
             </div>
         </div>
     </nav>
@@ -112,6 +113,24 @@
     <!-- Footer -->
     <footer class="footer">
         <div class="footer-content">
+
+    <script>
+        // Check if user is admin
+        async function checkAdminStatus() {
+            try {
+                const response = await fetch('/api/admin/check');
+                const data = await response.json();
+                if (data.isAdmin) {
+                    document.querySelectorAll('.admin-only').forEach(el => {
+                        el.style.display = 'inline';
+                    });
+                }
+            } catch (error) {}
+        }
+        checkAdminStatus();
+    </script>
+</body>
+</html>
             <div class="footer-brand">
                 <span class="footer-logo">📧 Auto Email Sender</span>
                 <p>Simple, secure email sending.</p>
