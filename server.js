@@ -100,8 +100,11 @@ app.get('/auth/google/callback', async (req, res) => {
             picture: userInfo.data.picture
         };
         
-        // Track user login
-        trackUserLogin(user);
+        // Check if this is a new login (user wasn't already logged in with this email)
+        const isNewLogin = !req.session.user || req.session.user.email !== user.email;
+        
+        // Track user login (only increment count for new logins)
+        trackUserLogin(user, isNewLogin);
         
         // Store in session
         req.session.tokens = tokens;
@@ -403,7 +406,7 @@ Best regards`);
 }
 
 // Function to track user login
-function trackUserLogin(user) {
+function trackUserLogin(user, isNewLogin = true) {
     const usersFile = path.join(__dirname, 'user_data', 'users.json');
     let users = {};
     
@@ -416,12 +419,18 @@ function trackUserLogin(user) {
     }
     
     const now = new Date().toISOString();
+    
     if (users[user.email]) {
-        users[user.email].lastLogin = now;
-        users[user.email].loginCount = (users[user.email].loginCount || 0) + 1;
+        // Existing user - only update lastLogin if it's a new login (not just page refresh)
+        if (isNewLogin) {
+            users[user.email].lastLogin = now;
+            users[user.email].loginCount = (users[user.email].loginCount || 0) + 1;
+        }
+        // Always update name and picture in case they changed
         users[user.email].name = user.name;
         users[user.email].picture = user.picture;
     } else {
+        // New user
         users[user.email] = {
             email: user.email,
             name: user.name,
