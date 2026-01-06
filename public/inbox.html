@@ -44,6 +44,13 @@
 
             <!-- Mail Content -->
             <div id="mailContent" style="display: none;">
+                <!-- Search Bar -->
+                <div class="search-bar">
+                    <input type="text" id="searchInput" placeholder="Search emails (from, subject, keywords...)" class="search-input">
+                    <button id="searchBtn" class="search-btn">🔍 Search</button>
+                    <button id="clearSearchBtn" class="clear-search-btn" style="display: none;">✕ Clear</button>
+                </div>
+
                 <!-- Pagination Controls -->
                 <div class="mail-controls">
                     <div class="limit-select">
@@ -101,6 +108,7 @@
     <script>
         let currentPageToken = null;
         let currentLimit = 10;
+        let currentSearch = '';
 
         // Check login status
         async function checkLogin() {
@@ -134,6 +142,9 @@
                 let url = `/api/inbox?limit=${currentLimit}`;
                 if (currentPageToken && append) {
                     url += `&pageToken=${currentPageToken}`;
+                }
+                if (currentSearch) {
+                    url += `&search=${encodeURIComponent(currentSearch)}`;
                 }
 
                 const response = await fetch(url);
@@ -239,6 +250,26 @@
 
         // Load more button
         document.getElementById('loadMoreBtn').onclick = () => loadMessages(true);
+
+        // Search functionality
+        document.getElementById('searchBtn').onclick = () => performSearch();
+        document.getElementById('searchInput').onkeypress = (e) => {
+            if (e.key === 'Enter') performSearch();
+        };
+        document.getElementById('clearSearchBtn').onclick = () => clearSearch();
+
+        function performSearch() {
+            currentSearch = document.getElementById('searchInput').value.trim();
+            document.getElementById('clearSearchBtn').style.display = currentSearch ? 'inline-block' : 'none';
+            loadMessages();
+        }
+
+        function clearSearch() {
+            currentSearch = '';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('clearSearchBtn').style.display = 'none';
+            loadMessages();
+        }
 
         // Helper functions
         function escapeHtml(text) {

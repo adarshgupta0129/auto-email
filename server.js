@@ -154,14 +154,20 @@ const requireAuth = (req, res, next) => {
 // Route to get inbox messages
 app.get('/api/inbox', requireAuth, async (req, res) => {
     try {
-        const { limit = 10, pageToken } = req.query;
+        const { limit = 10, pageToken, search } = req.query;
         
         oauth2Client.setCredentials(req.session.tokens);
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
+        // Build query string
+        let query = 'in:inbox';
+        if (search && search.trim()) {
+            query += ` ${search.trim()}`;
+        }
+        
         const response = await gmail.users.messages.list({
             userId: 'me',
-            labelIds: ['INBOX'],
+            q: query,
             maxResults: parseInt(limit),
             pageToken: pageToken || undefined
         });
@@ -212,14 +218,20 @@ app.get('/api/inbox', requireAuth, async (req, res) => {
 // Route to get sent messages
 app.get('/api/sent', requireAuth, async (req, res) => {
     try {
-        const { limit = 10, pageToken } = req.query;
+        const { limit = 10, pageToken, search } = req.query;
         
         oauth2Client.setCredentials(req.session.tokens);
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         
+        // Build query string
+        let query = 'in:sent';
+        if (search && search.trim()) {
+            query += ` ${search.trim()}`;
+        }
+        
         const response = await gmail.users.messages.list({
             userId: 'me',
-            labelIds: ['SENT'],
+            q: query,
             maxResults: parseInt(limit),
             pageToken: pageToken || undefined
         });
