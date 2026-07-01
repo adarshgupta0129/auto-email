@@ -7,6 +7,8 @@ const cors = require('cors');
 const session = require('express-session');
 const { google } = require('googleapis');
 require('dotenv').config();
+// Load after dotenv so GITHUB_* env vars are available at module init.
+const githubStorage = require('./github-storage');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -396,6 +398,7 @@ function getUserFolder(userEmail, type) {
             
             if (!fs.existsSync(subjectsFile)) {
                 fs.writeFileSync(subjectsFile, 'Invoice for Services\nMeeting Request');
+                githubStorage.pushFile(subjectsFile);
             }
             if (!fs.existsSync(messagesFile)) {
                 fs.writeFileSync(messagesFile, `---MESSAGE---
@@ -410,6 +413,7 @@ Hello,
 Thank you for your email. I will get back to you soon.
 
 Best regards`);
+                githubStorage.pushFile(messagesFile);
             }
         }
     }
@@ -460,6 +464,7 @@ function trackUserLogin(user, isNewLogin = true) {
     }
     
     fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+    githubStorage.pushFile(usersFile);
 }
 
 // Admin middleware - only for admin email
@@ -643,6 +648,7 @@ app.post('/send-email', upload.array('attachments', 10), requireAuth, async (req
                 const destPath = path.join(userFilesFolder, file.originalname);
                 if (!fs.existsSync(destPath)) {
                     fs.renameSync(file.path, destPath);
+                    githubStorage.pushFile(destPath);
                 } else {
                     fs.unlinkSync(file.path);
                 }
@@ -716,6 +722,7 @@ app.post('/files/delete', requireAuth, express.json(), (req, res) => {
     try {
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
+            githubStorage.deleteFile(filePath);
             res.json({ success: true, message: 'File deleted successfully' });
         } else {
             res.status(404).json({ success: false, message: 'File not found' });
@@ -771,8 +778,9 @@ app.post('/templates/subjects/add', requireAuth, express.json(), (req, res) => {
         const subjects = content.split('\n').filter(line => line.trim() !== '');
         if (!subjects.includes(subject.trim())) {
             fs.appendFileSync(subjectsFile, (content ? '\n' : '') + subject.trim());
+            githubStorage.pushFile(subjectsFile);
         }
-        
+
         res.json({ success: true, message: 'Subject added successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -791,8 +799,9 @@ app.post('/templates/subjects/delete', requireAuth, express.json(), (req, res) =
             const content = fs.readFileSync(subjectsFile, 'utf-8');
             const subjects = content.split('\n').filter(line => line.trim() !== '' && line.trim() !== subject.trim());
             fs.writeFileSync(subjectsFile, subjects.join('\n'));
+            githubStorage.pushFile(subjectsFile);
         }
-        
+
         res.json({ success: true, message: 'Subject deleted successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -813,7 +822,8 @@ app.post('/templates/messages/add', requireAuth, express.json(), (req, res) => {
         }
         
         fs.appendFileSync(messagesFile, (content ? '\n' : '') + '---MESSAGE---\n' + message.trim());
-        
+        githubStorage.pushFile(messagesFile);
+
         res.json({ success: true, message: 'Message added successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -832,16 +842,19 @@ app.post('/templates/messages/delete', requireAuth, express.json(), (req, res) =
             const content = fs.readFileSync(messagesFile, 'utf-8');
             const messages = content.split('---MESSAGE---').filter(msg => msg.trim() !== '' && msg.trim() !== message.trim());
             fs.writeFileSync(messagesFile, messages.map(msg => '---MESSAGE---\n' + msg.trim()).join('\n'));
+            githubStorage.pushFile(messagesFile);
         }
-        
+
         res.json({ success: true, message: 'Message deleted successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log('Login with Google to start sending emails!');
+// Start server (restore persisted data from GitHub first, so restarts don't reset it)
+githubStorage.pullAll().finally(() => {
+    app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+        console.log('Login with Google to start sending emails!');
+    });
 });
